@@ -1,0 +1,53 @@
+{
+  "name": "@taskrail/core",
+  "version": "0.1.0",
+  "description": "Taskrail core — job definition, JobQueue interface, job state machine.",
+  "license": "MIT",
+  "author": "hhw12409",
+  "homepage": "https://github.com/hhw12409/taskrail#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hhw12409/taskrail.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/hhw12409/taskrail/issues"
+  },
+  "keywords": [
+    "job-queue",
+    "background-jobs",
+    "task-queue",
+    "job-runtime",
+    "bullmq-alternative",
+    "typescript"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./internal": {
+      "types": "./dist/internal.d.ts",
+      "default": "./dist/internal.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --build --force",
+    "test": "npm run build && node --test \"dist/**/*.test.js\""
+  },
+  "engines": {
+    "node": ">=20.11"
+  }
+}

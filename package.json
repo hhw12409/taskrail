@@ -1,0 +1,27 @@
+{
+  "name": "taskrail-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Taskrail — Background Job Runtime (monorepo root)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hhw12409/taskrail.git"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc --build packages/core packages/queue-memory",
+    "typecheck": "tsc --build packages/core packages/queue-memory --force",
+    "test": "npm run build && node --test \"packages/*/dist/**/*.test.js\"",
+    "clean": "tsc --build packages/core packages/queue-memory --clean"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.11"
+  }
+}
