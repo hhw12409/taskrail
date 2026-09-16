@@ -4,8 +4,8 @@
 
 [English](#english) | [한국어](#한국어)
 
-> **Status: design approved, implementation in progress.** Not published to npm yet.
-> `@taskrail/core` is done; `@taskrail/queue-memory` and `@taskrail/queue-driftmq` are in progress.
+> **Status: MVP complete.** All five packages (core, worker runtime, memory adapter, DriftMQ
+> adapter) are implemented and tested. Not published to npm yet.
 
 ---
 
@@ -110,8 +110,8 @@ CLI/dashboard, DAGs/workflows, priority queues, rate limiting
 | Package | Status |
 |---|---|
 | `@taskrail/core` | done |
-| `@taskrail/queue-memory` | in progress |
-| `@taskrail/queue-driftmq` | planned |
+| `@taskrail/queue-memory` | done |
+| `@taskrail/queue-driftmq` | done |
 
 ### Contributing
 
