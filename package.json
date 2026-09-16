@@ -12,10 +12,10 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc --build packages/core packages/queue-memory",
-    "typecheck": "tsc --build packages/core packages/queue-memory --force",
+    "build": "tsc --build packages/core packages/queue-memory packages/queue-driftmq",
+    "typecheck": "tsc --build packages/core packages/queue-memory packages/queue-driftmq --force",
     "test": "npm run build && node --test \"packages/*/dist/**/*.test.js\"",
-    "clean": "tsc --build packages/core packages/queue-memory --clean"
+    "clean": "tsc --build packages/core packages/queue-memory packages/queue-driftmq --clean"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

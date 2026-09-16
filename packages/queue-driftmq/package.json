@@ -1,0 +1,52 @@
+{
+  "name": "@taskrail/queue-driftmq",
+  "version": "0.1.0",
+  "description": "Taskrail DriftMQ adapter — a JobQueue implementation speaking the DriftMQ binary wire protocol over TCP.",
+  "license": "MIT",
+  "author": "hhw12409",
+  "homepage": "https://github.com/hhw12409/taskrail#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hhw12409/taskrail.git",
+    "directory": "packages/queue-driftmq"
+  },
+  "bugs": {
+    "url": "https://github.com/hhw12409/taskrail/issues"
+  },
+  "keywords": [
+    "job-queue",
+    "background-jobs",
+    "task-queue",
+    "taskrail",
+    "driftmq"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --build --force",
+    "test": "npm run build && node --test \"dist/**/*.test.js\"",
+    "conformance": "npm run build && node --test dist/__tests__/conformance.test.js"
+  },
+  "dependencies": {
+    "@taskrail/core": "^0.1.0"
+  },
+  "engines": {
+    "node": ">=20.11"
+  }
+}
