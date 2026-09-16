@@ -24,6 +24,8 @@ import {
   nextAttemptEnvelope,
   resolveWorkerOptions,
 } from "../internal.js";
+import { decideDelay } from "../runtime/delay.js";
+import { ConcurrencyLimiter } from "../runtime/limiter.js";
 
 /** 계약 검증용 최소 큐. 진짜 구현체는 2단계(@taskrail/queue-memory)다. */
 class FakeQueue implements JobQueue {
@@ -53,6 +55,63 @@ class FakeQueue implements JobQueue {
   async deadLetter(_envelope: JobEnvelope, _reason: unknown): Promise<void> {}
   async close(): Promise<void> {
     this.closed = true;
+  }
+}
+
+/** nativeDelay가 없는 어댑터 흉내 — notBefore를 무시하고 즉시 전달한다. */
+class ImmediateQueue implements JobQueue {
+  readonly name = "immediate";
+  readonly capabilities: QueueCapabilities = {
+    nativeDelay: false,
+    redelivery: true,
+    visibilityTimeoutMs: 30_000,
+    nativeDeadLetter: false,
+  };
+  readonly enqueued: JobEnvelope[] = [];
+  readonly acked: unknown[] = [];
+  readonly nacked: unknown[] = [];
+  #handler: ((delivery: Delivery) => Promise<void>) | undefined;
+  #signal: AbortSignal | undefined;
+  #token = 0;
+
+  async enqueue(envelope: JobEnvelope): Promise<void> {
+    this.enqueued.push(envelope);
+    const handler = this.#handler;
+    if (handler === undefined || this.#signal?.aborted === true) return;
+    const receipt: DeliveryReceipt = { adapter: this.name, token: (this.#token += 1) };
+    queueMicrotask(() => {
+      void handler({ envelope, receipt, deliveryCount: 1 }).catch(() => {});
+    });
+  }
+
+  async consume(
+    handler: (delivery: Delivery) => Promise<void>,
+    options: { queue: string; prefetch: number; signal: AbortSignal },
+  ): Promise<Subscription> {
+    this.#handler = handler;
+    this.#signal = options.signal;
+    return {
+      close: async () => {
+        this.#handler = undefined;
+      },
+    };
+  }
+
+  async ack(receipt: DeliveryReceipt): Promise<void> {
+    this.acked.push(receipt.token);
+  }
+  async nack(receipt: DeliveryReceipt): Promise<void> {
+    this.nacked.push(receipt.token);
+  }
+  async deadLetter(_envelope: JobEnvelope, _reason: unknown): Promise<void> {}
+  async close(): Promise<void> {}
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error("waitFor 시간 초과");
+    await new Promise((resolve) => setTimeout(resolve, 5));
   }
 }
 
@@ -274,14 +333,108 @@ test("worker 옵션 기본값: prefetch = concurrency", () => {
   assert.equal(resolveWorkerOptions({ concurrency: 20 }).prefetch, 20);
 });
 
-test("createWorker는 Worker 표면을 만족한다 (실행 루프는 3단계)", async () => {
+test("createWorker는 Worker 표면을 만족하고 stop()은 멱등이다", async () => {
   const taskrail = new Taskrail({ queue: new FakeQueue() });
   const worker = taskrail.createWorker({ concurrency: 2 });
   assert.equal(typeof worker.id, "string");
   assert.equal(worker.inFlight, 0);
-  await assert.rejects(() => worker.start(), /3단계/);
+
+  await worker.start();
+  await assert.rejects(() => worker.start(), /이미 start/);
+
   await worker.stop();
   await worker.stop();
+});
+
+test("ConcurrencyLimiter: permit 소진 시 대기하고 release가 대기자에게 넘긴다", async () => {
+  const limiter = new ConcurrencyLimiter(1);
+  const signal = new AbortController().signal;
+
+  assert.equal(await limiter.acquire(signal), true);
+  assert.equal(limiter.available, 0);
+
+  let granted = false;
+  const waiting = limiter.acquire(signal).then((ok) => (granted = ok));
+  await Promise.resolve();
+  assert.equal(granted, false);
+  assert.equal(limiter.waiting, 1);
+
+  limiter.release();
+  await waiting;
+  assert.equal(granted, true);
+  assert.equal(limiter.available, 0);
+});
+
+test("ConcurrencyLimiter: abort된 대기자는 슬롯을 받지 않는다", async () => {
+  const limiter = new ConcurrencyLimiter(1);
+  const controller = new AbortController();
+
+  await limiter.acquire(controller.signal);
+  const waiting = limiter.acquire(controller.signal);
+  controller.abort();
+  assert.equal(await waiting, false);
+  assert.equal(await limiter.acquire(controller.signal), false);
+});
+
+test("nativeDelay 없는 어댑터: 짧은 지연은 inline, 긴 지연은 재enqueue", () => {
+  const window = { inlineDelayMs: 5_000, requeueIntervalMs: 30_000 };
+  assert.deepEqual(decideDelay(1_000, 2_000, window), { kind: "run" });
+  assert.deepEqual(decideDelay(3_000, 0, window), { kind: "sleep", ms: 3_000 });
+  assert.deepEqual(decideDelay(20_000, 0, window), { kind: "requeue", ms: 20_000 });
+  assert.deepEqual(decideDelay(600_000, 0, window), { kind: "requeue", ms: 30_000 });
+});
+
+test("nativeDelay 없는 어댑터: 짧은 잔여 지연은 슬롯을 잡은 채 기다렸다 실행한다", async () => {
+  const queue = new ImmediateQueue();
+  const taskrail = new Taskrail({ queue });
+  let ranAt = 0;
+
+  const job = taskrail.job("inline", async () => {
+    ranAt = Date.now();
+  });
+  const worker = taskrail.createWorker({
+    concurrency: 1,
+    inlineDelayMs: 500,
+    requeueIntervalMs: 50,
+  });
+  await worker.start();
+
+  const notBefore = Date.now() + 60;
+  await job.enqueue(undefined, { delayMs: 60 });
+  await waitFor(() => ranAt > 0);
+
+  assert.ok(ranAt >= notBefore, `notBefore 이전에 실행됐다: ${ranAt} < ${notBefore}`);
+  assert.equal(queue.enqueued.length, 1, "inline 대기는 재enqueue하지 않는다");
+  assert.equal(queue.acked.length, 1);
+
+  await worker.stop();
+});
+
+test("nativeDelay 없는 어댑터: 긴 지연은 attempt를 유지한 채 재enqueue한다", async () => {
+  const queue = new ImmediateQueue();
+  const taskrail = new Taskrail({ queue });
+  let runs = 0;
+
+  const job = taskrail.job("later", async () => {
+    runs += 1;
+  });
+  const worker = taskrail.createWorker({
+    concurrency: 1,
+    inlineDelayMs: 20,
+    requeueIntervalMs: 25,
+  });
+  await worker.start();
+
+  await job.enqueue(undefined, { delayMs: 60_000 });
+  await waitFor(() => queue.enqueued.length >= 3);
+  await worker.stop();
+
+  assert.equal(runs, 0, "notBefore 전에는 실행하지 않는다");
+  assert.ok(queue.acked.length >= 2, "재publish한 뒤 원본을 ack해야 한다");
+  assert.ok(queue.enqueued.every((e) => e.attempt === 1), "requeue는 attempt를 쓰지 않는다");
+  assert.equal(new Set(queue.enqueued.map((e) => e.jobId)).size, 1);
+
+  await taskrail.close();
 });
 
 test("에러 타입", () => {

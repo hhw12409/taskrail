@@ -76,6 +76,7 @@ export class Taskrail {
       stateStore: this.#stateStore,
       logger: this.#logger,
       options: resolveWorkerOptions(options),
+      defaults: this.#defaults,
     });
   }
 
